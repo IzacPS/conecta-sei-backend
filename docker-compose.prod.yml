@@ -22,6 +22,8 @@ services:
       - conectasei_network
 
   backend:
+    # Em deploy via CI: BACKEND_IMAGE=ghcr.io/owner/conecta-sei-backend:latest e use --no-build
+    image: ${BACKEND_IMAGE:-conectasei-backend:local}
     build:
       context: .
       dockerfile: Dockerfile

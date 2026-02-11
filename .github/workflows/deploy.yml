@@ -1,0 +1,102 @@
+# Deploy do backend ao dar push na branch master
+# Crie cada variável como secret (Settings > Secrets and variables > Actions).
+# O pipeline monta o .env no servidor a partir delas — é esse .env que o container lê.
+#
+# Deploy (SSH + imagem):
+#   DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, GHCR_TOKEN
+#   Opcional: DEPLOY_PORT, DEPLOY_PATH
+#
+# App (o que o backend lê dentro do container — um secret por variável):
+#   POSTGRES_PASSWORD   (obrigatório)
+#   POSTGRES_USER       (default automasei)
+#   POSTGRES_DB         (default automasei)
+#   FIREBASE_CREDENTIALS   (JSON da service account em uma linha)
+#   FIREBASE_STORAGE_BUCKET
+#   CONECTASEI_ENCRYPTION_KEY
+#   AUTH_DEV_MODE       (opcional, ex: false)
+
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image meta
+        id: meta
+        run: |
+          echo "repo=${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
+          echo "image=${{ env.REGISTRY }}/${{ github.repository }}:latest" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: success() && secrets.DEPLOY_SSH_KEY != ''
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: GHCR_TOKEN,BACKEND_IMAGE,DEPLOY_PATH,POSTGRES_PASSWORD,POSTGRES_USER,POSTGRES_DB,FIREBASE_CREDENTIALS,FIREBASE_STORAGE_BUCKET,CONECTASEI_ENCRYPTION_KEY,AUTH_DEV_MODE
+          script: |
+            set -e
+            cd "${DEPLOY_PATH:-~/conecta-sei-backend}" || { echo "Diretório não encontrado: $DEPLOY_PATH"; exit 1; }
+            {
+              echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+              echo "POSTGRES_USER=${POSTGRES_USER:-automasei}"
+              echo "POSTGRES_DB=${POSTGRES_DB:-automasei}"
+              echo "FIREBASE_CREDENTIALS=$FIREBASE_CREDENTIALS"
+              echo "FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
+              echo "CONECTASEI_ENCRYPTION_KEY=$CONECTASEI_ENCRYPTION_KEY"
+              echo "AUTH_DEV_MODE=${AUTH_DEV_MODE:-false}"
+            } > .env
+            if [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            fi
+            docker pull $BACKEND_IMAGE
+            docker compose -f docker-compose.prod.yml up -d --no-build
+            docker image prune -f
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          CONECTASEI_ENCRYPTION_KEY: ${{ secrets.CONECTASEI_ENCRYPTION_KEY }}
+          AUTH_DEV_MODE: ${{ secrets.AUTH_DEV_MODE }}

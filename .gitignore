@@ -36,7 +36,7 @@ logs/
 temp/
 tmp/
 
-# Environment
+# Environment (local, nunca commitar)
 .env
 .env.local
 .env.*.local
