@@ -108,11 +108,37 @@ jobs:
             # Remove espaços de indentação do heredoc
             sed -i 's/^[[:space:]]*//' .env
 
+            # Debug: mostra .env gerado (sem valores sensíveis)
+            echo "=== .env keys ==="
+            cut -d= -f1 .env
+            echo "=================="
+
             # Login no GHCR e pull da imagem
             echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull "$BACKEND_IMAGE"
 
-            # Sobe (ou atualiza) os containers
+            # Para containers antigos e limpa volume se postgres não inicializa
+            docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+
+            # Sobe postgres primeiro e espera
+            docker compose -f docker-compose.prod.yml up -d postgres
+            echo "Aguardando postgres (60s)..."
+            for i in $(seq 1 12); do
+              sleep 5
+              if docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U "${PG_USER}" 2>/dev/null; then
+                echo "Postgres OK!"
+                break
+              fi
+              echo "Tentativa $i/12..."
+              if [ "$i" = "12" ]; then
+                echo "=== POSTGRES LOGS ==="
+                docker logs conectasei_postgres --tail 50
+                echo "====================="
+                exit 1
+              fi
+            done
+
+            # Sobe backend
             docker compose -f docker-compose.prod.yml up -d --no-build
             docker image prune -f
         env:
