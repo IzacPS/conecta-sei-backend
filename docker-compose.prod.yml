@@ -14,9 +14,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-automasei} -d ${POSTGRES_DB:-automasei}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 30
+      start_period: 30s
     restart: always
     networks:
       - conectasei_network
