@@ -1,0 +1,55 @@
+# ConectaSEI Backend — só backend em produção: Postgres + API (sem frontend)
+# Uso: docker compose -f docker-compose.prod.yml up -d
+# Variáveis obrigatórias: POSTGRES_PASSWORD, ENCRYPTION_KEY, FIREBASE_* (ver .env.example)
+
+services:
+  postgres:
+    image: paradedb/paradedb:latest
+    container_name: conectasei_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-automasei}
+      POSTGRES_USER: ${POSTGRES_USER:-automasei}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-automasei} -d ${POSTGRES_DB:-automasei}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - conectasei_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: conectasei_backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-automasei}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-automasei}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS}
+      FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET}
+      CONECTASEI_ENCRYPTION_KEY: ${CONECTASEI_ENCRYPTION_KEY:?Set CONECTASEI_ENCRYPTION_KEY}
+      AUTH_DEV_MODE: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r = httpx.get('http://localhost:8000/health'); assert r.status_code == 200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: always
+    networks:
+      - conectasei_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  conectasei_network:
+    driver: bridge

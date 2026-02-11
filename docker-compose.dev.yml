@@ -1,5 +1,5 @@
-# Mesmo conteúdo do docker-compose.yml principal.
-# Prefira: docker compose up -d   (não precisa deste arquivo)
+# ConectaSEI Backend — só backend + Postgres (dev, sem pgAdmin)
+# Uso: docker compose -f docker-compose.dev.yml up -d
 
 services:
   postgres:
@@ -35,23 +35,6 @@ services:
       postgres:
         condition: service_healthy
     command: sh -c "alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
-    networks:
-      - conectasei_network
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        NUXT_PUBLIC_API_BASE: http://localhost:8000
-        CACHEBUST: ${CACHEBUST:-1}
-    container_name: conectasei_frontend
-    environment:
-      NUXT_PUBLIC_API_BASE: http://localhost:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
     networks:
       - conectasei_network
 

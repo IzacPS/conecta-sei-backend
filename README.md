@@ -9,17 +9,19 @@ API REST do ConectaSEI (FastAPI + PostgreSQL/ParadeDB). Autenticação Firebase;
 ## Quick start
 
 ```bash
-# Dependências
-pip install -r requirements-new.txt
-
-# Postgres + API com Docker
+# Postgres + API com Docker (recomendado)
 docker compose up -d
 # API: http://localhost:8000  |  Docs: http://localhost:8000/docs
 
-# Ou local: configure .env (copie de .env.example) e
+# Opcional: pgAdmin (porta 5050)
+docker compose --profile tools up -d
+
+# Ou local: pip install -r requirements-new.txt, configure .env e
 alembic upgrade head
 uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**Composes:** `docker-compose.yml` (dev), `docker-compose.dev.yml`, `docker-compose.test.yml` (testes), `docker-compose.prod.yml` (produção). Todos incluem apenas backend + banco (e ferramentas opcionais).
 
 ## Variáveis de ambiente
 

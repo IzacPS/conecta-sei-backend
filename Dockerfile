@@ -1,4 +1,5 @@
-# ConectaSEI Backend - FastAPI + Playwright
+# ConectaSEI Backend — único serviço deste repositório: API FastAPI + Playwright
+# Não inclui frontend, postgres nem outros serviços (ver docker-compose*.yml).
 FROM python:3.12-slim
 
 WORKDIR /app

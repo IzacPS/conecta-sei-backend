@@ -1,3 +1,4 @@
+# ConectaSEI Backend — só infra de teste: Postgres + Firebase Emulator (sem frontend)
 services:
   # PostgreSQL with ParadeDB extension (Test environment)
   postgres-test:

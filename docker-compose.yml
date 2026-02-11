@@ -1,5 +1,5 @@
-# ConectaSEI Backend - Postgres + API
-# Uso: docker compose up -d
+# ConectaSEI Backend — só serviços do backend: Postgres + API (+ pgAdmin opcional)
+# Sem frontend. Uso: docker compose up -d
 # API http://localhost:8000 | Docs http://localhost:8000/docs
 
 services:
