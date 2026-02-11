@@ -1,10 +1,9 @@
-# Deploy na branch master. Mínimo (como nas imagens):
-# - Secrets: DATABASE_URL, DEPLOY_SSH_KEY, FIREBASE_CREDENTIALS, GHCR_TOKEN
-# - Variables: AUTH_DEV_MODE, DEPLOY_HOST, DEPLOY_USER, PAYMENT_PROVIDER
+# Deploy na branch master/main. O pipeline faz TUDO: builda imagem, copia compose,
+# escreve .env e sobe os containers. Na máquina só precisa ter Docker instalado.
 #
-# Produção (recomendado) — adicione também:
-# - Secrets: CONECTASEI_ENCRYPTION_KEY
-# - (Secrets ou Variables): FIREBASE_STORAGE_BUCKET
+# Secrets: DATABASE_URL, DEPLOY_SSH_KEY, FIREBASE_CREDENTIALS, GHCR_TOKEN
+# Variables: AUTH_DEV_MODE, DEPLOY_HOST, DEPLOY_USER, PAYMENT_PROVIDER
+# Produção: + Secrets CONECTASEI_ENCRYPTION_KEY, FIREBASE_STORAGE_BUCKET
 
 name: Build and Deploy
 
@@ -16,6 +15,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  DEPLOY_DIR: /opt/conecta-sei-backend
 
 jobs:
   build-and-push:
@@ -34,27 +34,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Image meta
-        id: meta
-        run: |
-          echo "repo=${{ github.repository }}" >> $GITHUB_OUTPUT
-          echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
-          echo "image=${{ env.REGISTRY }}/${{ github.repository }}:latest" >> $GITHUB_OUTPUT
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.image }}
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: success() && secrets.DEPLOY_SSH_KEY != ''
+    if: success()
     steps:
+      - name: Checkout (pega docker-compose.prod.yml)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: docker-compose.prod.yml
+
+      - name: Copia docker-compose.prod.yml pro servidor
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          source: docker-compose.prod.yml
+          target: ${{ env.DEPLOY_DIR }}
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -62,54 +70,44 @@ jobs:
           username: ${{ vars.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: 22
-          envs: GHCR_TOKEN,BACKEND_IMAGE,DATABASE_URL,FIREBASE_CREDENTIALS,FIREBASE_STORAGE_BUCKET,CONECTASEI_ENCRYPTION_KEY,AUTH_DEV_MODE,PAYMENT_PROVIDER
+          envs: GHCR_TOKEN,BACKEND_IMAGE,DATABASE_URL,FIREBASE_CREDENTIALS,FIREBASE_STORAGE_BUCKET,CONECTASEI_ENCRYPTION_KEY,AUTH_DEV_MODE,PAYMENT_PROVIDER,DEPLOY_DIR
           script: |
             set -e
-            cd ~/conecta-sei-backend || { echo "Diretório ~/conecta-sei-backend não encontrado"; exit 1; }
-            # Extrai POSTGRES_* do DATABASE_URL (postgresql://user:password@host:port/db)
+
+            # Cria pasta se não existir
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+
+            # Extrai POSTGRES_* do DATABASE_URL
             if [[ "$DATABASE_URL" =~ postgresql://([^:]+):([^@]+)@[^/]+/(.+) ]]; then
-              POSTGRES_USER="${BASH_REMATCH[1]}"
-              POSTGRES_PASSWORD="${BASH_REMATCH[2]}"
-              POSTGRES_DB="${BASH_REMATCH[3]}"
+              PG_USER="${BASH_REMATCH[1]}"
+              PG_PASS="${BASH_REMATCH[2]}"
+              PG_DB="${BASH_REMATCH[3]}"
             else
-              POSTGRES_USER="automasei"
-              POSTGRES_PASSWORD=""
-              POSTGRES_DB="automasei"
+              echo "DATABASE_URL inválida"; exit 1
             fi
 
-            # Valida requisitos mínimos em produção (AUTH_DEV_MODE=false)
-            if [ "${AUTH_DEV_MODE:-false}" != "true" ]; then
-              if [ -z "${CONECTASEI_ENCRYPTION_KEY:-}" ]; then
-                echo "Faltando CONECTASEI_ENCRYPTION_KEY (adicione como Secret)."
-                exit 1
-              fi
-              if [ -z "${FIREBASE_STORAGE_BUCKET:-}" ]; then
-                echo "Faltando FIREBASE_STORAGE_BUCKET (adicione como Secret ou Variable)."
-                exit 1
-              fi
-              if [ -z "${FIREBASE_CREDENTIALS:-}" ]; then
-                echo "Faltando FIREBASE_CREDENTIALS (adicione como Secret)."
-                exit 1
-              fi
-              if [[ "${FIREBASE_CREDENTIALS}" == *$'\n'* ]]; then
-                echo "FIREBASE_CREDENTIALS deve ser JSON em UMA linha (minificado)."
-                exit 1
-              fi
-            fi
-            {
-              echo "POSTGRES_USER=$POSTGRES_USER"
-              echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
-              echo "POSTGRES_DB=$POSTGRES_DB"
-              echo "FIREBASE_CREDENTIALS=$FIREBASE_CREDENTIALS"
-              echo "FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
-              echo "CONECTASEI_ENCRYPTION_KEY=$CONECTASEI_ENCRYPTION_KEY"
-              echo "AUTH_DEV_MODE=${AUTH_DEV_MODE:-false}"
-              echo "PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-manual}"
-            } > .env
-            if [ -n "$GHCR_TOKEN" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            fi
-            docker pull $BACKEND_IMAGE
+            # Gera .env (o compose lê daqui)
+            cat > .env <<EOF
+            BACKEND_IMAGE=$BACKEND_IMAGE
+            POSTGRES_USER=$PG_USER
+            POSTGRES_PASSWORD=$PG_PASS
+            POSTGRES_DB=$PG_DB
+            FIREBASE_CREDENTIALS=$FIREBASE_CREDENTIALS
+            FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET
+            CONECTASEI_ENCRYPTION_KEY=$CONECTASEI_ENCRYPTION_KEY
+            AUTH_DEV_MODE=${AUTH_DEV_MODE:-false}
+            PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-manual}
+            EOF
+
+            # Remove espaços de indentação do heredoc
+            sed -i 's/^[[:space:]]*//' .env
+
+            # Login no GHCR e pull da imagem
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull "$BACKEND_IMAGE"
+
+            # Sobe (ou atualiza) os containers
             docker compose -f docker-compose.prod.yml up -d --no-build
             docker image prune -f
         env:
@@ -121,3 +119,4 @@ jobs:
           CONECTASEI_ENCRYPTION_KEY: ${{ secrets.CONECTASEI_ENCRYPTION_KEY }}
           AUTH_DEV_MODE: ${{ vars.AUTH_DEV_MODE }}
           PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER }}
+          DEPLOY_DIR: ${{ env.DEPLOY_DIR }}
