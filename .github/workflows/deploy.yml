@@ -40,8 +40,6 @@ jobs:
           context: .
           push: true
           tags: ${{ env.REGISTRY }}/${{ github.repository }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   deploy:
     runs-on: ubuntu-latest
