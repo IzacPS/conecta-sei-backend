@@ -1,0 +1,64 @@
+# ConectaSEI Backend - Postgres + API
+# Uso: docker compose up -d
+# API http://localhost:8000 | Docs http://localhost:8000/docs
+
+services:
+  postgres:
+    image: paradedb/paradedb:latest
+    container_name: conectasei_postgres
+    environment:
+      POSTGRES_DB: automasei
+      POSTGRES_USER: automasei
+      POSTGRES_PASSWORD: automasei_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automasei -d automasei"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - conectasei_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: conectasei_backend
+    environment:
+      DATABASE_URL: postgresql://automasei:automasei_dev_password@postgres:5432/automasei
+      AUTH_DEV_MODE: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
+    networks:
+      - conectasei_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: conectasei_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@conectasei.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - conectasei_network
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  conectasei_network:
+    driver: bridge

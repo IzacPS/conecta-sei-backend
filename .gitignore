@@ -1,0 +1,100 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.py[cod]
+*$py.class
+.Python
+eggs/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+
+# Temporary
+*.tmp
+*.swp
+temp/
+tmp/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.test
+!.env.example
+
+# Data Files
+*.csv
+processos_atuais*.json
+backup.7z
+
+# Playwright
+playwright/
+*.trace/
+.playwright/
+playwright/.local-browsers/
+
+# Scrapy
+.scrapy/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.spec
+AutomaSEISetup.exe
+7za.exe
+
+# Credentials
+credenciais.json
+config/credentials.json
+
+# Downloads
+downloads/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/firebase/fake-credentials.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+secrets/
+*.pem
+firebase-credentials.json
+*firebase*adminsdk*.json
+*-firebase-adminsdk-*.json
+
+# Backups
+backups/
+
+# Docker
+postgres_data/

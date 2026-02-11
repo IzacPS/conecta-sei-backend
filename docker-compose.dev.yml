@@ -1,0 +1,64 @@
+# Mesmo conteúdo do docker-compose.yml principal.
+# Prefira: docker compose up -d   (não precisa deste arquivo)
+
+services:
+  postgres:
+    image: paradedb/paradedb:latest
+    container_name: conectasei_postgres
+    environment:
+      POSTGRES_DB: automasei
+      POSTGRES_USER: automasei
+      POSTGRES_PASSWORD: automasei_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automasei -d automasei"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - conectasei_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: conectasei_backend
+    environment:
+      DATABASE_URL: postgresql://automasei:automasei_dev_password@postgres:5432/automasei
+      AUTH_DEV_MODE: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
+    networks:
+      - conectasei_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NUXT_PUBLIC_API_BASE: http://localhost:8000
+        CACHEBUST: ${CACHEBUST:-1}
+    container_name: conectasei_frontend
+    environment:
+      NUXT_PUBLIC_API_BASE: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - conectasei_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  conectasei_network:
+    driver: bridge
