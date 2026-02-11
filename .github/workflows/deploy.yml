@@ -37,12 +37,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Image tag (lowercase)
+        id: meta
+        run: echo "image=$(echo '${{ env.REGISTRY }}/${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):latest" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          tags: ${{ steps.meta.outputs.image }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -113,7 +117,7 @@ jobs:
             docker image prune -f
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          BACKEND_IMAGE: ghcr.io/izacps/conecta-sei-backend:latest
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET || vars.FIREBASE_STORAGE_BUCKET }}
