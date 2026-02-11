@@ -1,19 +1,10 @@
-# Deploy do backend ao dar push na branch master
-# Crie cada variável como secret (Settings > Secrets and variables > Actions).
-# O pipeline monta o .env no servidor a partir delas — é esse .env que o container lê.
+# Deploy na branch master. Mínimo (como nas imagens):
+# - Secrets: DATABASE_URL, DEPLOY_SSH_KEY, FIREBASE_CREDENTIALS, GHCR_TOKEN
+# - Variables: AUTH_DEV_MODE, DEPLOY_HOST, DEPLOY_USER, PAYMENT_PROVIDER
 #
-# Deploy (SSH + imagem):
-#   DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, GHCR_TOKEN
-#   Opcional: DEPLOY_PORT, DEPLOY_PATH
-#
-# App (o que o backend lê dentro do container — um secret por variável):
-#   POSTGRES_PASSWORD   (obrigatório)
-#   POSTGRES_USER       (default automasei)
-#   POSTGRES_DB         (default automasei)
-#   FIREBASE_CREDENTIALS   (JSON da service account em uma linha)
-#   FIREBASE_STORAGE_BUCKET
-#   CONECTASEI_ENCRYPTION_KEY
-#   AUTH_DEV_MODE       (opcional, ex: false)
+# Produção (recomendado) — adicione também:
+# - Secrets: CONECTASEI_ENCRYPTION_KEY
+# - (Secrets ou Variables): FIREBASE_STORAGE_BUCKET
 
 name: Build and Deploy
 
@@ -21,6 +12,7 @@ on:
   push:
     branches:
       - master
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -66,22 +58,53 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: GHCR_TOKEN,BACKEND_IMAGE,DEPLOY_PATH,POSTGRES_PASSWORD,POSTGRES_USER,POSTGRES_DB,FIREBASE_CREDENTIALS,FIREBASE_STORAGE_BUCKET,CONECTASEI_ENCRYPTION_KEY,AUTH_DEV_MODE
+          port: 22
+          envs: GHCR_TOKEN,BACKEND_IMAGE,DATABASE_URL,FIREBASE_CREDENTIALS,FIREBASE_STORAGE_BUCKET,CONECTASEI_ENCRYPTION_KEY,AUTH_DEV_MODE,PAYMENT_PROVIDER
           script: |
             set -e
-            cd "${DEPLOY_PATH:-~/conecta-sei-backend}" || { echo "Diretório não encontrado: $DEPLOY_PATH"; exit 1; }
+            cd ~/conecta-sei-backend || { echo "Diretório ~/conecta-sei-backend não encontrado"; exit 1; }
+            # Extrai POSTGRES_* do DATABASE_URL (postgresql://user:password@host:port/db)
+            if [[ "$DATABASE_URL" =~ postgresql://([^:]+):([^@]+)@[^/]+/(.+) ]]; then
+              POSTGRES_USER="${BASH_REMATCH[1]}"
+              POSTGRES_PASSWORD="${BASH_REMATCH[2]}"
+              POSTGRES_DB="${BASH_REMATCH[3]}"
+            else
+              POSTGRES_USER="automasei"
+              POSTGRES_PASSWORD=""
+              POSTGRES_DB="automasei"
+            fi
+
+            # Valida requisitos mínimos em produção (AUTH_DEV_MODE=false)
+            if [ "${AUTH_DEV_MODE:-false}" != "true" ]; then
+              if [ -z "${CONECTASEI_ENCRYPTION_KEY:-}" ]; then
+                echo "Faltando CONECTASEI_ENCRYPTION_KEY (adicione como Secret)."
+                exit 1
+              fi
+              if [ -z "${FIREBASE_STORAGE_BUCKET:-}" ]; then
+                echo "Faltando FIREBASE_STORAGE_BUCKET (adicione como Secret ou Variable)."
+                exit 1
+              fi
+              if [ -z "${FIREBASE_CREDENTIALS:-}" ]; then
+                echo "Faltando FIREBASE_CREDENTIALS (adicione como Secret)."
+                exit 1
+              fi
+              if [[ "${FIREBASE_CREDENTIALS}" == *$'\n'* ]]; then
+                echo "FIREBASE_CREDENTIALS deve ser JSON em UMA linha (minificado)."
+                exit 1
+              fi
+            fi
             {
+              echo "POSTGRES_USER=$POSTGRES_USER"
               echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
-              echo "POSTGRES_USER=${POSTGRES_USER:-automasei}"
-              echo "POSTGRES_DB=${POSTGRES_DB:-automasei}"
+              echo "POSTGRES_DB=$POSTGRES_DB"
               echo "FIREBASE_CREDENTIALS=$FIREBASE_CREDENTIALS"
               echo "FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
               echo "CONECTASEI_ENCRYPTION_KEY=$CONECTASEI_ENCRYPTION_KEY"
               echo "AUTH_DEV_MODE=${AUTH_DEV_MODE:-false}"
+              echo "PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-manual}"
             } > .env
             if [ -n "$GHCR_TOKEN" ]; then
               echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -92,11 +115,9 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}:latest
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET || vars.FIREBASE_STORAGE_BUCKET }}
           CONECTASEI_ENCRYPTION_KEY: ${{ secrets.CONECTASEI_ENCRYPTION_KEY }}
-          AUTH_DEV_MODE: ${{ secrets.AUTH_DEV_MODE }}
+          AUTH_DEV_MODE: ${{ vars.AUTH_DEV_MODE }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER }}
