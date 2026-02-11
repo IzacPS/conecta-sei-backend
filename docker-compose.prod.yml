@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-automasei}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-automasei} -d ${POSTGRES_DB:-automasei}"]
       interval: 5s

@@ -117,8 +117,8 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull "$BACKEND_IMAGE"
 
-            # Para containers antigos e limpa volume se postgres não inicializa
-            docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+            # Para containers e remove volume antigo (incompatível com PG 18+)
+            docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
 
             # Sobe postgres primeiro e espera
             docker compose -f docker-compose.prod.yml up -d postgres
